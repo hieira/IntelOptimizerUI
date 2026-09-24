@@ -1,15 +1,27 @@
+import json
+import os
 import psutil
+from psutil import BELOW_NORMAL_PRIORITY_CLASS, HIGH_PRIORITY_CLASS
 
 class ProcessAffinityManager:
     @staticmethod
     def quick_apply(p_mask, e_mask):
         success_count = 0
         try:
-            # Example heuristic: assign typical games to P-Core, background to E-Core
-            # For simplicity, we just list processes and their expected mask
-            # P-Core = lower bits, E-Core = upper bits
-            games = ["csgo.exe", "valorant.exe", "dota2.exe"]
-            bg_apps = ["chrome.exe", "discord.exe", "spotify.exe"]
+            games = ["csgo.exe", "valorant.exe", "dota2.exe", "cs2.exe"]
+            bg_apps = ["chrome.exe", "discord.exe", "spotify.exe", "msedge.exe", "obs64.exe"]
+            
+            try:
+                config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.json')
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    games = config.get('HighPriority_Games', games)
+                    bg_apps = config.get('Background_Apps', bg_apps)
+            except Exception:
+                pass
+            
+            games = [g.lower() for g in games]
+            bg_apps = [g.lower() for g in bg_apps]
             
             for p in psutil.process_iter(['pid', 'name']):
                 name = p.info['name'].lower() if p.info['name'] else ""
@@ -18,10 +30,21 @@ class ProcessAffinityManager:
                         # Convert mask to list of cores
                         cores = ProcessAffinityManager.mask_to_list(p_mask)
                         p.cpu_affinity(cores)
+                        p.nice(HIGH_PRIORITY_CLASS)
                         success_count += 1
                     elif name in bg_apps:
+                        # For browsers/electron apps, locking solely to E-cores causes heavy UI lag.
+                        # Best practice: Do not lock affinity (or give E-cores + 2 P-cores).
+                        # Here, we just lower priority and let Windows Thread Director handle it.
+                        p.nice(BELOW_NORMAL_PRIORITY_CLASS)
+                        
+                        # Optionally, we can assign E-Cores + 1 P-Core (Thread 0 and 1) to avoid total starvation
                         cores = ProcessAffinityManager.mask_to_list(e_mask)
+                        # Add first P-Core (thread 0 and 1) if not already in cores
+                        if 0 not in cores: cores.append(0)
+                        if 1 not in cores: cores.append(1)
                         p.cpu_affinity(cores)
+                        
                         success_count += 1
                 except Exception:
                     pass
