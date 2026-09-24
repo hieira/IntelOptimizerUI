@@ -55,8 +55,11 @@ class ZeroBleedManager:
                 pass
         return ""
 
+    _enabled = False
+
     @classmethod
     def _event_hook_callback(cls, hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsEventTime):
+        if not cls._enabled: return
         if event == EVENT_SYSTEM_FOREGROUND:
             exe_name = cls.get_process_name_from_hwnd(hwnd)
             if exe_name in cls._games:
@@ -70,10 +73,12 @@ class ZeroBleedManager:
 
     @classmethod
     def start(cls):
-        if cls._is_running: return
         cls.load_games()
-        cls._is_running = True
         cls._active = False
+        cls._enabled = True
+        
+        if cls._is_running: return
+        cls._is_running = True
         
         # Need a message loop for the hook to work
         def hook_thread_func():
@@ -91,8 +96,6 @@ class ZeroBleedManager:
             
             msg = wintypes.MSG()
             while user32.GetMessageW(ctypes.byref(msg), 0, 0, 0) != 0:
-                if not cls._is_running:
-                    break
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))
             
@@ -106,7 +109,6 @@ class ZeroBleedManager:
 
     @classmethod
     def stop(cls):
-        cls._is_running = False
+        cls._enabled = False
         cls._active = False
         ColorManager.restore_default()
-        # To break the message loop gracefully, we should post a quit message, but daemon thread will kill it anyway.

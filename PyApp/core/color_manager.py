@@ -3,10 +3,12 @@ from ctypes import wintypes
 import math
 import win32api
 import win32con
+import threading
 
 class ColorManager:
     _default_ramp = None
     _current_ramp = None
+    _lock = threading.Lock()
 
     @classmethod
     def get_dc(cls):
@@ -37,10 +39,11 @@ class ColorManager:
 
     @classmethod
     def restore_default(cls):
-        if cls._default_ramp is None: return
-        hdc = cls.get_dc()
-        ctypes.windll.gdi32.SetDeviceGammaRamp(hdc, ctypes.byref(cls._default_ramp))
-        cls.release_dc(hdc)
+        with cls._lock:
+            if cls._default_ramp is None: return
+            hdc = cls.get_dc()
+            ctypes.windll.gdi32.SetDeviceGammaRamp(hdc, ctypes.byref(cls._default_ramp))
+            cls.release_dc(hdc)
         from core.nvapi_manager import NvApiManager
         NvApiManager.set_vibrance_percent(50) # default vibrance
 
@@ -71,10 +74,11 @@ class ColorManager:
             ramp[i + 256] = int(g * 65535)
             ramp[i + 512] = int(b * 65535)
 
-        hdc = cls.get_dc()
-        ctypes.windll.gdi32.SetDeviceGammaRamp(hdc, ctypes.byref(ramp))
-        cls.release_dc(hdc)
-        cls._current_ramp = ramp
+        with cls._lock:
+            hdc = cls.get_dc()
+            ctypes.windll.gdi32.SetDeviceGammaRamp(hdc, ctypes.byref(ramp))
+            cls.release_dc(hdc)
+            cls._current_ramp = ramp
 
         from core.nvapi_manager import NvApiManager
         NvApiManager.set_vibrance_percent(vibrance)
